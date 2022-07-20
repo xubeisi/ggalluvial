@@ -965,6 +965,67 @@ server <- function(input, output, session) {
     geom_stratum(alpha = {input$alpha},width = input$alluvium_width) +
     geom_text(aes(label = {input$stratum_var}), stat = 'stratum', size = rel(5)) + 
     geom_flow(stat = 'alluvium', lode.guidance = 'forward', width = {input$alluvium_width}) + theme_bw()")
+    # if labels specified
+    if (input$label_axes)
+      p <- glue("{p} + labs(x = '{input$lab_x}', y = '{input$lab_y}') ")
+    
+    if (input$scale_x_log)
+      p <- glue("{p} + scale_x_log10() ")
+    if (input$scale_y_log)
+      p <- glue("{p} + scale_y_log10() ")
+    if (nchar(gsub(" ","",input$scale_x_lim))){
+      p <- glue("{p} + xlim({input$scale_x_lim})")
+    }
+    if (nchar(gsub(" ","",input$scale_y_lim))){
+      p <- glue("{p} + ylim({input$scale_y_lim})")
+    }
+    # if title specified
+    if (input$add_title)
+      p <- glue("{p} + ggtitle('{input$title}')")
+    
+    gg_fil <- 1
+    gg_fil_txt <- if (gg_fil) "fill" else "colour"
+    # if legend specified
+    if (input$adj_leg == "Change legend"){
+      p <- glue("{p} + labs({gg_fil_txt} = '{input$leg_ttl}')")
+    }
+    
+    # if colour legend specified
+    if (input$adj_col)
+      p <- glue("{p} + scale_{gg_fil_txt}_brewer(palette = '{input$palet}')")
+    
+    # If theme features are specified
+    if (input$adj_fnt_sz ||
+        input$adj_fnt ||
+        input$rot_txt ||
+        input$adj_leg != "Keep legend as it is" ||
+        input$adj_grd) {
+      p <- paste(
+        p,
+        paste(
+          " + theme(\n    ",
+          if (input$adj_fnt_sz)
+            glue("axis.title = element_text(size = {input$fnt_sz_ttl}),\n    "),
+          if (input$adj_fnt_sz)
+            glue("axis.text = element_text(size = {input$fnt_sz_ax}),\n    "),
+          if (input$adj_fnt)
+            glue("text = element_text(family = '{input$font}'),\n    "),
+          if (input$rot_txt)
+            glue("axis.text.x = element_text(angle = {input$rot_txt_x_degree}, hjust = 1),\n    "),
+          if (input$adj_leg == "Remove legend")
+            "legend.position = 'none',\n    ",
+          if (input$adj_leg == "Change legend")
+            glue("legend.position = '{input$pos_leg}',\n    "),
+          if (input$grd_maj)
+            "panel.grid.major = element_blank(),\n    ",
+          if (input$grd_min)
+            "panel.grid.minor = element_blank(),\n    ",
+          ")",
+          sep = ""
+        ),
+        sep = ""
+      )
+    }
     
     p <- str_replace_all(p, "[ ]+", " ")
     list(p,new_xvar,new_yvar)
@@ -979,6 +1040,43 @@ server <- function(input, output, session) {
   width_download <- reactive ({ input$fig_width })
   height_download <- reactive ({ input$fig_height })
   
+  #####################################
+  #### GENERATE R-CODE FOR OUTPUT #####
+  #####################################
+  output$download_table <- downloadHandler(
+    filename <- function() {
+      paste("Data_SJCAB_", sub(" ","-",Sys.time()), ".csv", sep = "")
+    },
+    content <- function(file) {
+      data <- df_trans_shiny()
+      write.table(data.frame("Row"=row.names(data),data,check.names = FALSE),file,na = "",sep=",",row.names = FALSE)
+    }
+  )
+  
+  output$download_plot_PDF <- downloadHandler(
+    filename <- function() {
+      paste("Figure_SJCAB_", sub(" ","-",Sys.time()), ".pdf", sep = "")
+    },
+    content <- function(file) {
+      p <- p_for_out_ggplot()
+      ggsave(file, p, width = width_download()/60,
+             height = height_download()/60, units = "in", dpi=300)
+    },
+    contentType = "application/pdf" # MIME type of the image
+  )
+  
+  output$download_plot_SVG <- downloadHandler(
+    filename <- function() {
+      paste("Figure_SJCAB_", sub(" ","-",Sys.time()), ".svg", sep = "")
+    },
+    content <- function(file) {
+      p <- p_for_out_ggplot()
+      ggsave(file, p, width = width_download()/60,
+             height = height_download()/60, units = "in", dpi=300)
+    },
+    contentType = "application/svg" # MIME type of the image
+  )
+  
   p_for_out_ggplot <- reactive({
     # evaluate the string RCode as code
     df <- df_trans_shiny()
@@ -988,8 +1086,8 @@ server <- function(input, output, session) {
     ssss <- string_code()[[1]]
 
     print(ssss)
-    p <- eval(parse(text = ssss))
     #browser()
+    p <- eval(parse(text = ssss))
     p
   })
   
@@ -1076,7 +1174,8 @@ server <- function(input, output, session) {
           hover$y > pbuilt$data[[2]]$ymin & 
           hover$y < pbuilt$data[[2]]$ymax
         node_label <- pbuilt$data[[2]]$stratum[node_row]
-        node_n <- pbuilt$data[[2]]$count[node_row] 
+        node_n <- pbuilt$data[[2]]$count[node_row]
+        #browser()
         
         # Render tooltip
         renderTags(
