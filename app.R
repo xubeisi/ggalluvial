@@ -1,25 +1,45 @@
-library(ggalluvial)
-library(htmltools)
-library(sp)
+libs <- "pak,shiny,ggplotgui,glue,plotly,readr,stringr,readxl,haven,RColorBrewer,DT,scatterD3,dplyr,ggrepel,colourpicker,svglite,remotes,connectapi,lubridate,config,shinysurveys,googlesheets4,queryBuilder,shinyjs,ggalluvial,htmltools,sp"
+libs <- unlist(strsplit(libs,","))
+req<-unlist( lapply(libs,function(p) suppressPackageStartupMessages(require(p,character.only=TRUE)) ) )
+need<-libs[req==FALSE]
+print(need)
 
-library(glue)
-library(shiny)
-library(plotly)
-library(readr)
-library(stringr)
-library(readxl)
-library(haven)
-library(RColorBrewer)
-library(DT)
-library(dplyr)
-library(colourpicker)
-library(svglite)
-library(remotes)
-library(lubridate)
-library(config)
-library(shinysurveys)
-library(googlesheets4)
-library(queryBuilder)
+if (0){
+  if ("pak" %in% need){
+    install.packages("pak", repos = sprintf("https://r-lib.github.io/p/pak/stable/%s/%s/%s", .Platform$pkgType, R.Version()$os, R.Version()$arch))
+  }
+  options(install.packages.check.source = "no")
+  if ("lubridate" %in% need){
+    install.packages("lubridate")
+  }
+  for (lib in need) { pak::pkg_install(lib,ask = FALSE) }
+  req<-unlist( lapply(libs,function(p) suppressPackageStartupMessages(require(p,character.only=TRUE)) ) )
+  need<-libs[req==FALSE]
+  print(need)
+} else {
+  library(ggalluvial)
+  library(htmltools)
+  library(sp)
+  
+  library(glue)
+  library(shiny)
+  library(plotly)
+  library(readr)
+  library(stringr)
+  library(readxl)
+  library(haven)
+  library(RColorBrewer)
+  library(DT)
+  library(dplyr)
+  library(colourpicker)
+  library(svglite)
+  library(remotes)
+  library(lubridate)
+  library(config)
+  library(shinysurveys)
+  library(googlesheets4)
+  library(queryBuilder)
+}
 
 googlesheeturl <- "https://docs.google.com/spreadsheets/d/1IgeQizH3Gtz9wngRoD61Ro8hqYgJp2uMHTLRT1vPzVM/edit#gid=1005821039"
 
@@ -266,7 +286,7 @@ ui <- fluidPage(
                  ),
                  hr(),
                  conditionalPanel(
-                   condition = "input.tabs == 'XXXXX'",
+                   condition = "input.tabs == 'ggplot'",
                    selectInput("facet_row", "Facet Row", choices = ""),
                    selectInput("facet_col", "Facet Column", choices = "")
                  ),
@@ -441,12 +461,12 @@ ui <- fluidPage(
                      )
               ),
               column(4,
-                     colourInput("genelabelcolor",
+                     colourpicker::colourInput("genelabelcolor",
                                  tags$a(href="http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/",
                                         target="_blank",
                                         "Color of Label:"),
                                  value = "red"),
-                     colourInput("genelabelcolordot",
+                     colourpicker::colourInput("genelabelcolordot",
                                  tags$a(href="http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/",
                                         target="_blank",
                                         "Color of Dot:"),
@@ -778,6 +798,8 @@ server <- function(input, output, session) {
       data(vaccinations)
       data <- transform(vaccinations,
                         response = factor(response, rev(levels(response))))
+      data$test <- 1:nrow(data)
+      data$test <- ifelse(data$test %% 2 == 1,"Odd","Even")
     } else if (input$data_input == 2) {
       file_in <- input$upload
       # Avoid error message while file is not uploaded yet
@@ -962,9 +984,15 @@ server <- function(input, output, session) {
     p <- glue("ggplot(df, aes(x = {input$x_var}, y = {input$y_var},
     stratum = {input$stratum_var}, alluvium = {input$id_var},
                 fill = {input$stratum_var})) +
-    geom_stratum(alpha = {input$alpha},width = input$alluvium_width) +
+    geom_stratum(alpha = {input$alpha},width = {input$alluvium_width}) +
     geom_text(aes(label = {input$stratum_var}), stat = 'stratum', size = rel(5)) + 
     geom_flow(stat = 'alluvium', lode.guidance = 'forward', width = {input$alluvium_width}) + theme_bw()")
+    
+    # if at least one facet column/row is specified, add it
+    facets <- paste(input$facet_row, "~", input$facet_col)
+    if (facets != ". ~ .")
+      p <- glue("{p} + facet_grid({facets}, scales = 'free_y')")
+    
     # if labels specified
     if (input$label_axes)
       p <- glue("{p} + labs(x = '{input$lab_x}', y = '{input$lab_y}') ")
@@ -1027,7 +1055,7 @@ server <- function(input, output, session) {
       )
     }
     
-    p <- str_replace_all(p, "[ ]+", " ")
+    p <- str_replace_all(p, "[ ]+|\n", " ")
     list(p,new_xvar,new_yvar)
   })
 
